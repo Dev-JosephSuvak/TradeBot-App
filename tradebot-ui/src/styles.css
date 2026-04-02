@@ -1,0 +1,176 @@
+:root {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #dbeafe;
+  background: #0b1220;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at top, #16243f, #0b1220 50%);
+}
+
+.app-shell {
+  width: min(1400px, 96vw);
+  margin: 0 auto;
+  padding: 1.25rem 0 2rem;
+}
+
+.top-bar h1 {
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+.top-bar p {
+  margin: 0.35rem 0 1rem;
+  color: #94a3b8;
+}
+
+.panel {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid #24314e;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.8rem;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.8rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 0.8rem;
+  margin-bottom: 0.8rem;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+label {
+  font-size: 0.82rem;
+  color: #93c5fd;
+}
+
+select,
+input,
+button {
+  border-radius: 8px;
+  border: 1px solid #355082;
+  background: #0f1a31;
+  color: #e2e8f0;
+  padding: 0.5rem 0.65rem;
+}
+
+button {
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+button:hover {
+  background: #1b2c4b;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.button-row {
+  justify-content: flex-end;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.chart-surface {
+  width: 100%;
+  height: 460px;
+}
+
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.8rem;
+}
+
+.value-card {
+  border: 1px solid #2f4368;
+  border-radius: 10px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.value-card span {
+  color: #93c5fd;
+  font-size: 0.85rem;
+}
+
+.value-card strong {
+  font-size: 1.1rem;
+}
+
+.trade-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 1rem;
+}
+
+.table-wrap {
+  max-height: 360px;
+  overflow: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem;
+  border-bottom: 1px solid #2f4368;
+  font-size: 0.9rem;
+}
+
+.error-banner {
+  background: rgba(220, 38, 38, 0.15);
+  border: 1px solid #ef4444;
+  color: #fecaca;
+  border-radius: 10px;
+  padding: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 1024px) {
+  .trade-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}

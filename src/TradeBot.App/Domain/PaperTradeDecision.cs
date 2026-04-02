@@ -8,4 +8,6 @@ public sealed record PaperTradeDecision(
     decimal ReferencePrice,
     string Status,
     string Notes,
-    DateTime RecordedAtUtc);
+    DateTime RecordedAtUtc,
+    string StrategyName,
+    string Reason);

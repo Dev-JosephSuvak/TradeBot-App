@@ -15,4 +15,7 @@ public sealed record TradeSignal(
     decimal ShortAverage,
     decimal LongAverage,
     string Reason,
-    DateTime GeneratedAtUtc);
+    DateTime GeneratedAtUtc,
+    string StrategyName = "sma_crossover",
+    decimal? Rsi = null,
+    decimal? Mac = null);
