@@ -1,0 +1,36 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{84F5D357-423A-4859-AFBB-08E6971CEA34}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradeBot.App", "src\TradeBot.App\TradeBot.App.csproj", "{3A7E0AA0-762F-4D13-816E-5CEEE5931227}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{65BAECFD-383E-4721-9C00-FCD54AFA6891}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradeBot.App.Tests", "tests\TradeBot.App.Tests\TradeBot.App.Tests.csproj", "{12DA9737-250A-4FFA-A161-B739BEA430DE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{3A7E0AA0-762F-4D13-816E-5CEEE5931227}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3A7E0AA0-762F-4D13-816E-5CEEE5931227}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3A7E0AA0-762F-4D13-816E-5CEEE5931227}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3A7E0AA0-762F-4D13-816E-5CEEE5931227}.Release|Any CPU.Build.0 = Release|Any CPU
+		{12DA9737-250A-4FFA-A161-B739BEA430DE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{12DA9737-250A-4FFA-A161-B739BEA430DE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{12DA9737-250A-4FFA-A161-B739BEA430DE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{12DA9737-250A-4FFA-A161-B739BEA430DE}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{3A7E0AA0-762F-4D13-816E-5CEEE5931227} = {84F5D357-423A-4859-AFBB-08E6971CEA34}
+		{12DA9737-250A-4FFA-A161-B739BEA430DE} = {65BAECFD-383E-4721-9C00-FCD54AFA6891}
+	EndGlobalSection
+EndGlobal
