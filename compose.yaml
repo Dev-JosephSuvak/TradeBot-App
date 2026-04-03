@@ -1,0 +1,25 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: src/TradeBot.App/Dockerfile
+    container_name: tradebot-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      FIREBASE_ENABLED: "false"
+      BINANCE_ENABLED: "true"
+      TRADEBOT_PYTHON: /opt/tradebot-python/bin/python
+    ports:
+      - "5100:5100"
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: ./tradebot-ui
+      dockerfile: Dockerfile
+    container_name: tradebot-ui
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+    restart: unless-stopped

@@ -6,6 +6,7 @@ public sealed record FirebaseSettings
     public string ProjectId { get; init; } = string.Empty;
     public string DatabaseId { get; init; } = "(default)";
     public string CollectionName { get; init; } = "tradebot_runs";
+    public string PortfolioCollectionName { get; init; } = "tradebot_portfolio";
     public string CredentialsPath { get; init; } = string.Empty;
     public string EmulatorHost { get; init; } = string.Empty;
 }

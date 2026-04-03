@@ -20,6 +20,8 @@ public sealed class PaperTradingService
 			signal.LatestClose,
 			status,
 			notes,
-			DateTime.UtcNow);
+			DateTime.UtcNow,
+			signal.StrategyName,
+			signal.Reason);
 	}
 }

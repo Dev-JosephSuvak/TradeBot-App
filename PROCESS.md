@@ -11,14 +11,30 @@
 
 ### High-level design
 
-1. `Program.cs` resolves config and composes the bot.
-2. Provider adapters implement `IMarketDataProvider`.
-3. `YahooFinancePythonBridgeProvider` shells out to `Infrastructure/Core/yahoo_bridge.py`.
-4. The Python script tries `yfinance` and falls back to deterministic synthetic candles for local testing.
-5. `SmaCrossoverStrategy` computes SMA short/long crossover signals.
-6. `PaperTradingService` converts signals into simulated orders only.
-7. `TradeBotRunner` executes the workflow and persists run reports through infrastructure stores.
-8. `CompositeRunReportStore` writes to local JSON and optionally Firestore.
+1. `Program.cs` resolves config and composes the application as a **web host** (ASP.NET Core minimal API).
+2. `GET /api/candles/{ticker}` is the market-index endpoint; it delegates to `MarketIndexService`.
+3. `GET /api/signals/{ticker}` computes the latest SMA crossover signal and returns `SignalDto`.
+4. `GET /api/indicators/{ticker}` is the dynamic indicator endpoint; it delegates to `MarketIndicatorsService`.
+5. `GET /api/market-universe/tickers` returns available Stocks, ETFs, and Cryptos tickers via `MarketUniverseService`.
+6. `MarketIndexService` iterates the registered provider list, returns candles from the first that succeeds, and always falls back to `SimulatedMarketDataProvider`.
+7. `MarketIndicatorsService` calls Python (`indicator_bridge.py`) to calculate RSI + moving-average crossover analytics.
+8. The indicator bridge computes period metrics across `5m`, `15m`, `1h`, `1d`, `1mo`, `1y`, `5y`, and `max`.
+9. `PaperPortfolioService` executes simulated trades, tracks positions/trade history/P&L, and enforces risk controls.
+10. `TickerAggregateCacheService` caches per-ticker aggregates for 5 minutes for fast UI loading.
+11. `IPortfolioStore` uses Firebase-first persistence with local JSON fallback.
+12. Provider adapters implement `IMarketDataProvider`.
+13. `YahooFinancePythonBridgeProvider` shells out to `Infrastructure/Core/yahoo_bridge.py`.
+14. The Python script tries `yfinance` and falls back to deterministic synthetic candles for local testing.
+15. `SmaCrossoverStrategy` computes SMA short/long crossover signals.
+16. `PaperTradingService` converts signals into simulated orders only.
+17. `TradeBotRunner` executes the batch workflow and persists run reports through infrastructure stores.
+18. `CompositeRunReportStore` writes to local JSON and optionally Firestore.
+19. Swagger is configured with typed endpoint responses so each contract DTO appears in the API schema.
+20. `tradebot-ui` provides a React dashboard with chart-mode switching, portfolio management, and executed-trade views.
+21. Backend CORS allows `http://localhost:5173` so the UI can call API endpoints during local development.
+22. `compose.yaml` acts as the master run pipeline, building and starting both the API and UI together.
+23. The UI container serves the built React app and proxies `/api/*` traffic to the API container over the compose network.
+24. The console runner is opt-in via `RUN_CONSOLE=true`; the API host is always the primary entry-point.
 
 ### Components
 
@@ -47,6 +63,68 @@
   - Optionally persists run reports to Firestore collection
 - `CompositeRunReportStore`
   - Executes all configured persistence stores
+- `MarketIndexService`
+  - Application-layer service used by the API endpoint
+  - Iterates providers in priority order; falls back to simulated data
+  - Maps domain `MarketCandle` to public `CandleDto` (ISO 8601 timestamps)
+- `SimulatedMarketDataProvider`
+  - Generates OHLCV candles using Geometric Brownian Motion
+  - Configurable via `SimulationSettings` (seed price, volatility, drift, interval)
+  - Deterministic per-ticker via symbol-hash seed
+  - Always enabled; used as the final fallback
+- `CandleDto`
+  - Public API response shape matching the spec
+  - Fields: `timestamp` (ISO 8601), `open`, `high`, `low`, `close`, `volume`
+- `SimulationSettings`
+  - Sub-record in `Infrastructure/Settings/Models/SimulationSettings.cs`
+  - Controls `seedPrice`, `dailyVolatility`, `driftPerCandle`, `intervalMinutes`
+- `PythonIndicatorsBridgeRunner`
+  - Invokes `Infrastructure/Core/indicator_bridge.py`
+  - Passes dynamic period + MA window parameters
+  - Parses indicator JSON into typed DTOs
+- `MarketIndicatorsService`
+  - Application-layer service for `/api/indicators/{ticker}`
+  - Executes Python indicator workflow and returns API response model
+- `MarketUniverseService`
+  - Aggregates ticker universe for Stocks, ETFs, and Cryptos
+  - Pulls Stocks/ETFs from NASDAQ Trader symbol feeds and Cryptos from Binance exchange info
+  - Applies configured symbol fallback when live sources are unavailable
+- `tradebot-ui`
+  - React + TypeScript + Vite frontend for charting and portfolio management
+  - Uses `lightweight-charts` for line/candle/range/heikin-ashi/kagi rendering modes
+  - Calls `/api/candles`, `/api/market-universe/tickers`, `/api/portfolio`, and `/api/portfolio/execute`
+- `compose.yaml`
+  - Orchestrates `api` and `ui` services together
+  - Exposes API on `5100` and UI on `5173`
+- `src/TradeBot.App/Dockerfile`
+  - Builds the .NET API and includes a Python runtime for bridge scripts
+- `tradebot-ui/Dockerfile`
+  - Builds the React UI and serves static assets from a web container
+- `tradebot-ui/Caddyfile`
+  - Proxies `/api/*` to the API container and falls back to `index.html` for SPA routes
+- `indicator_bridge.py`
+  - Uses `pandas`/`TA-Lib` when available, with resilient fallback behavior
+  - Computes RSI with Wilder smoothing, average low/high RSI, RS, MA crossover, trend, and period volume
+- `IndicatorResponseDto` / `IndicatorPeriodMetricsDto`
+  - Public indicator payload contracts
+  - Expose keys like `avgLowRSI`, `avgHighRSI`, `relativeStrength`, and `volumeTraded`
+- `PaperPortfolioService`
+  - Maintains simulated portfolio state (`cash`, `equity`, realized/unrealized P&L)
+  - Executes buy/sell orders and appends immutable trade history
+  - Enforces max position-size risk control and stop-loss exits
+- `TickerAggregateCacheService`
+  - Stores 5-minute cached ticker snapshots (price/avg/high/low/volume)
+  - Refreshes from market data when stale
+- `RuntimeGlobalsLoader`
+  - Loads a single runtime globals JSON file and applies values as environment variables
+  - Supports `--globals <path>` and automatic `variables.json` fallback discovery
+- `FirestorePortfolioStore`
+  - Persists current portfolio snapshot to Firestore (`tradebot_portfolio/current`)
+- `FilePortfolioStore`
+  - Persists `latest-portfolio.json` locally
+- `FirebaseFirstPortfolioStore`
+  - Load order: Firestore primary → local file fallback
+  - Save order: Firestore primary + best-effort local backup; fallback to file on primary failure
 
 ### Safety constraints
 
@@ -58,11 +136,60 @@
 ### Data flow
 
 1. Read configuration
-2. For each symbol, ask each provider for historical candles
-3. Run the SMA crossover strategy when enough candles exist
-4. Produce a paper-trade decision
-5. Persist report to file store
-6. Persist report to Firestore when enabled
+2. **API path:** HTTP GET `/api/candles/{ticker}?lookbackDays=N`
+   - `MarketIndexService` tries each provider in order
+   - Returns JSON array of `CandleDto` objects from first successful provider
+   - Falls back to `SimulatedMarketDataProvider` if all live providers fail
+3. **API path:** HTTP GET `/api/indicators/{ticker}?period=N&periodType=days&shortWindow=5&longWindow=20`
+  - `MarketIndicatorsService` invokes Python indicator bridge
+  - Python computes RSI + MA crossover metrics for `5m`, `15m`, `1h`, `1d`, `1mo`, `1y`, `5y`, `max`
+  - API returns selected-period summary and full per-period metric list
+4. **API path:** Portfolio + cache
+   - `POST /api/portfolio/execute` executes simulated orders with risk checks
+   - `GET /api/portfolio*` returns portfolio state, positions, and trades
+   - `GET /api/ticker-cache/{ticker}` returns cached snapshot and triggers stop-loss checks
+5. **Runtime configuration path**
+  - Load env vars from explicit globals file (`--globals path.json`) or fallback `variables.json`
+  - Apply process env vars last for final override behavior
+6. **Batch path** (`RUN_CONSOLE=true`): For each symbol in config, ask each provider for historical candles, run SMA crossover strategy, produce paper-trade decision, persist run report
+
+### Contract file map
+
+- `Candle`
+  - `Application/Contracts/Api/CandleDto.cs`
+  - `Application/Services/MarketIndexService.cs`
+  - `Domain/MarketCandle.cs`
+- `Signal`
+  - `Application/Contracts/Api/SignalDto.cs`
+  - `Application/Services/ContractMapper.cs`
+  - `Application/Services/SmaCrossoverStrategy.cs`
+  - `Domain/TradeSignal.cs`
+- `Trade`
+  - `Application/Contracts/Api/TradeDto.cs`
+  - `Application/Services/ContractMapper.cs`
+  - `Application/Services/PaperPortfolioService.cs`
+  - `Domain/PortfolioTrade.cs`
+- `PortfolioState`
+  - `Application/Contracts/Api/PortfolioStateDto.cs`
+  - `Application/Services/ContractMapper.cs`
+  - `Application/Services/PaperPortfolioService.cs`
+  - `Domain/PortfolioState.cs`
+- `Strategy`
+  - `Application/Contracts/Simulation/IStrategy.cs`
+  - `Application/Services/SmaCrossoverStrategy.cs`
+- `Engine`
+  - `Application/Contracts/Simulation/IEngine.cs`
+  - `Application/Services/SimulationEngine.cs`
+- `SimulationResult`
+  - `Application/Contracts/Api/SimulationResultDto.cs`
+  - `Application/Services/ContractMapper.cs`
+  - `Application/Services/SimulationEngine.cs`
+  - `Program.cs`
+- `MarketUniverse`
+  - `Application/Contracts/Api/MarketTickerDto.cs`
+  - `Application/Contracts/Api/MarketUniverseDto.cs`
+  - `Application/Services/MarketUniverseService.cs`
+  - `Program.cs`
 
 ## Implementation log
 
@@ -77,6 +204,49 @@
 - Moved configuration into `Infrastructure/Settings`
 - Added Firestore infrastructure settings and persistence logic
 - Added separate model files for `ApiSettings`, `ProviderSettings`, and `FirebaseSettings` under `Infrastructure/Settings/Models`
+- Added Market Index API: `GET /api/candles/{ticker}` with Swagger UI
+- Added `SimulatedMarketDataProvider` using Geometric Brownian Motion
+- Added `SimulationSettings` model under `Infrastructure/Settings/Models`
+- Added `MarketIndexService` as application-layer orchestrator for the API endpoint
+- Added `CandleDto` matching the spec (ISO 8601 timestamp, float OHLCV fields)
+- Switched project SDK to `Microsoft.NET.Sdk.Web`; added `Swashbuckle.AspNetCore`
+- Rewrote `Program.cs` as `WebApplication` host; console runner opt-in via `RUN_CONSOLE=true`
+- Verified: build ✅, tests ✅ (2/2), API live on port 5100 returning candle JSON
+- Added dynamic indicators endpoint: `GET /api/indicators/{ticker}`
+- Added `MarketIndicatorsService` and `PythonIndicatorsBridgeRunner`
+- Added `indicator_bridge.py` for RSI + MA crossover analytics across multi-period buckets
+- Added indicator API contracts with explicit JSON key casing (`avgLowRSI`, `avgHighRSI`, etc.)
+- Added `IndicatorsBridgeScriptRelativePath` to settings and environment override (`TRADEBOT_INDICATORS_BRIDGE`)
+- Updated `requirements.txt` with `pandas`, `numpy`, and `TA-Lib`
+- Verified indicator endpoint live response structure and values via local API smoke test
+- Added portfolio domain models (`PortfolioState`, `PortfolioPosition`, `PortfolioTrade`)
+- Added portfolio contracts and execution request/response models
+- Added `PaperPortfolioService` with configurable starting balance (default `$10,000`)
+- Added risk controls: max position size (% of equity) and stop-loss execution
+- Added `TickerAggregateCacheService` with configurable 5-minute TTL
+- Added Firebase-first portfolio persistence (`FirestorePortfolioStore` primary, `FilePortfolioStore` fallback)
+- Added portfolio/cache API endpoints: `/api/portfolio`, `/api/portfolio/positions`, `/api/portfolio/trades`, `/api/portfolio/execute`, `/api/ticker-cache/{ticker}`
+- Added `RuntimeGlobalsLoader` and `variables.json` fallback for runtime environment population
+- Added optional trade strategy metadata to portfolio trades and execution requests
+- Added console trade log summaries including timestamp, price, quantity, notional, and triggering strategy
+- Added spec-shaped contracts for `Signal`, `Trade`, `PortfolioState`, and `SimulationResult`
+- Added `IStrategy` and `IEngine` contracts for simulation flow
+- Added `ContractMapper` to keep public API responses aligned with contract field names
+- Updated `SmaCrossoverStrategy` and `PaperTradingService` to propagate strategy and reason metadata
+- Updated portfolio endpoints to return contract-shaped DTO responses
+- Added tests covering signal-to-decision propagation and stop-loss trade mapping
+- Added typed API response contract for trade execution (`PortfolioExecutionResponseDto`)
+- Added signal endpoint: `GET /api/signals/{ticker}` returning `SignalDto`
+- Added market universe endpoint: `GET /api/market-universe/tickers` returning grouped stocks/ETFs/cryptos
+- Added `MarketUniverseService` to retrieve and normalize ticker catalogs from public sources
+- Updated endpoint metadata to use typed `.Produces<T>()` responses so Swagger lists all API contracts
+- Added `tradebot-ui` React app with chart workspace, market ticker selector, portfolio summary, trade execution form, and executed-trade grid
+- Added chart transforms for `line`, `candle`, `range-line`, `range-bar`, `heikin-ashi`, and `kagi` views
+- Added backend CORS policy (`TradeBotUi`) for `http://localhost:5173`
+- Added `src/TradeBot.App/Dockerfile` for a containerized API with Python bridge support
+- Added `tradebot-ui/Dockerfile` and `tradebot-ui/Caddyfile` for a containerized UI with API reverse proxying
+- Added root `compose.yaml` as the master run process for launching API + UI together
+- Added Docker ignore files for leaner builds
 
 ## Validation log
 
@@ -87,6 +257,14 @@
 ### Tests
 
 - `dotnet test TradeBotApp.sln --no-build` ✅
+- `runTests` (workspace) ✅ — 4/4 passing
+
+### Diagnostics
+
+- C# diagnostics for `src/TradeBot.App` and `tests/TradeBot.App.Tests/UnitTest1.cs` ✅
+- Python analysis still reports optional-package imports unresolved until `requirements.txt` is installed (`pandas`, `numpy`, `yfinance`, optional `TA-Lib`)
+- Container config diagnostics for `compose.yaml`, `src/TradeBot.App/Dockerfile`, and `tradebot-ui/Caddyfile` ✅
+- UI container base-image scanners still report upstream vulnerability advisories; the compose and config files themselves are valid
 
 ### Sample run
 
@@ -250,11 +428,200 @@ The log now documents every major decision, artifact, and verification step from
 - Kept `TradeBotSettings.cs` focused on top-level composition only
 - Verified build and tests
 
-### User (Current request)
-
-> Okay, you haven't added our chats into the PROCESS.md, nor updated it.
-
-### Assistant (Current response)
+### User (Current response)
 
 - Updated `PROCESS.md` with latest architecture and implementation changes
 - Added all recent user/assistant exchanges through current request
+
+### User (Market Index API request)
+
+> Now, we are creating a market index for candles & market data.
+>
+Requirement:
+> Price Data Ingestion — connect to a free public API to retrieve live or near-live price data for at least one symbol. Alternatively, generate realistic simulated price data with configurable volatility.
+>
+> Candle shape: `{ timestamp: string (ISO 8601), open: float, high: float, low: float, close: float, volume: float }`
+>
+> We should have an endpoint that takes a parameter (e.g. ticker AAPL), which should return candle data as shown.
+
+### Assistant (Market Index API response)
+
+**Design decisions:**
+- Added `GET /api/candles/{ticker}?lookbackDays=N` minimal-API endpoint
+- `MarketIndexService` (application layer) iterates all providers in priority order, returns candles from the first that succeeds
+- Added `SimulatedMarketDataProvider` as always-on final fallback using Geometric Brownian Motion (configurable volatility, drift, seed price, and interval via `SimulationSettings`)
+- `CandleDto` record matches spec exactly: `timestamp` (ISO 8601 string), `open`, `high`, `low`, `close`, `volume` (all `double`)
+- Swagger UI served at `/` for interactive testing
+
+**New files:**
+- `Application/Contracts/Api/CandleDto.cs` — public API response record
+- `Application/Services/SimulatedMarketDataProvider.cs` — GBM-based realistic candle generator
+- `Application/Services/MarketIndexService.cs` — provider-cascade + DTO mapping
+- `Infrastructure/Settings/Models/SimulationSettings.cs` — volatility/drift/interval config
+
+**Modified files:**
+- `TradeBot.App.csproj` — SDK changed to `Microsoft.NET.Sdk.Web`; added `Swashbuckle.AspNetCore 6.9.0`
+- `Infrastructure/Settings/TradeBotSettings.cs` — added `Simulation` property
+- `Program.cs` — rewritten as `WebApplication` host; console runner opt-in via `RUN_CONSOLE=true`
+- `appsettings.json` — added `simulation` block
+
+**Verification:**
+- `dotnet build TradeBotApp.sln` ✅ — 0 errors, 0 warnings
+- `dotnet test TradeBotApp.sln --no-build` ✅ — 2/2 passing
+- `GET http://localhost:5100/api/candles/AAPL?lookbackDays=5` ✅ — returned 5 OHLCV candles
+- `GET http://localhost:5100/swagger/v1/swagger.json` ✅ — Swagger spec correct
+- Swagger UI accessible at `http://localhost:5100`
+
+### User (Dynamic RSI + crossover request)
+
+> Okay, now we are going to pass in the moving average crossover and the Relative Stregnth Index. It should be dynamic.
+>
+> For MAC, use Python and required price points over 5m, 15m, 1hr, day, month, year, 5 years, all time.
+>
+> Get individual RSI, average lowest RSI, average highest RSI.
+>
+> Relative Strength: track close-price changes, split gains/losses, compute average gain/loss, save RS.
+>
+> RSI formula: `RSI = 100 - (100 / (1 + RS))`, use Wilder smoothing, give trend direction and volume traded across periods.
+>
+> Use `pandas` / `ta-lib` and return structured payload, e.g. `{ ticker, rsi, avgLowRSI, avgHighRSI, period, periodType, crossover }`.
+
+### Assistant (Dynamic RSI + crossover response)
+
+**Implementation summary:**
+- Added `GET /api/indicators/{ticker}?period=15&periodType=days&shortWindow=5&longWindow=20`
+- Added `MarketIndicatorsService` and `PythonIndicatorsBridgeRunner` for dynamic Python-driven indicator computation
+- Added `Infrastructure/Core/indicator_bridge.py` to compute:
+  - RSI via Wilder smoothing (`avgGain`, `avgLoss`, `RS`, RSI formula)
+  - MA crossover (`shortMovingAverage - longMovingAverage`)
+  - Trend direction (`Bullish`, `Bearish`, `Sideways`)
+  - Volume traded and datapoint count per period
+- Added period buckets: `5m`, `15m`, `1h`, `1d`, `1mo`, `1y`, `5y`, `max`
+- Added explicit JSON response casing (`avgLowRSI`, `avgHighRSI`, etc.) via DTO attributes
+
+**Files added/updated:**
+- Added: `Application/Contracts/Api/IndicatorResponseDto.cs`
+- Added: `Application/Contracts/Api/IndicatorPeriodMetricsDto.cs`
+- Added: `Application/Services/MarketIndicatorsService.cs`
+- Added: `Infrastructure/Core/PythonIndicatorsBridgeRunner.cs`
+- Added: `Infrastructure/Core/indicator_bridge.py`
+- Updated: `Program.cs`, `TradeBotSettings.cs`, `TradeBotSettingsLoader.cs`, `appsettings.json`, `requirements.txt`, `README.md`
+
+**Validation:**
+- `dotnet build TradeBotApp.sln` ✅
+- `dotnet test TradeBotApp.sln --no-build` ✅
+- `python3 src/TradeBot.App/Infrastructure/Core/indicator_bridge.py --ticker AAPL --period 15 --period-type days --short-window 5 --long-window 20` ✅
+- `GET http://localhost:5100/api/indicators/AAPL?period=15&periodType=days&shortWindow=5&longWindow=20` ✅ returned expected indicator payload with 8 period metric objects
+
+### User (Paper portfolio + cache request)
+
+> 3. Paper Portfolio & Trade Execution
+> - Maintain simulated portfolio with configurable starting balance (default `$10,000`)
+> - Track positions, realized and unrealized P&L, and trade history
+> - Implement risk controls: max position size (% of portfolio) and stop-loss
+>
+> Track execution timing and cache ticker aggregate data for 5 minutes so UI loads quickly.
+>
+> Ensure Firebase compatibility first, with local JSON as backup.
+
+### Assistant (Paper portfolio + cache response)
+
+**Implementation summary:**
+- Added portfolio domain models: `PortfolioState`, `PortfolioPosition`, `PortfolioTrade`
+- Added `PaperPortfolioService` with:
+  - Configurable starting balance (`PortfolioSettings.StartingBalanceUsd`, default `$10,000`)
+  - Position tracking + realized/unrealized P&L + equity
+  - Trade history with execution timestamps
+  - Risk controls:
+    - Max position size (`MaxPositionSizePercent`)
+    - Stop-loss (`StopLossPercent`) via `RefreshTickerAndApplyStopLossAsync`
+- Added `TickerAggregateCacheService`:
+  - 5-minute TTL cache (`CacheTtlMinutes`)
+  - Aggregates: last price, avg close, high, low, total volume, candle count
+- Added Firebase-first persistence:
+  - `FirestorePortfolioStore` (primary)
+  - `FilePortfolioStore` (backup / fallback JSON)
+  - `FirebaseFirstPortfolioStore` (primary-first failover strategy)
+- Added API endpoints:
+  - `GET /api/portfolio`
+  - `GET /api/portfolio/positions`
+  - `GET /api/portfolio/trades?limit=...`
+  - `POST /api/portfolio/execute`
+  - `GET /api/ticker-cache/{ticker}`
+
+**Configuration updates:**
+- Added `portfolio` section in `appsettings.json`
+  - `startingBalanceUsd`, `maxPositionSizePercent`, `stopLossPercent`, `cacheTtlMinutes`
+- Added `firebase.portfolioCollectionName`
+- Added env overrides:
+  - `FIREBASE_PORTFOLIO_COLLECTION_NAME`
+  - `PORTFOLIO_STARTING_BALANCE_USD`
+  - `PORTFOLIO_MAX_POSITION_SIZE_PERCENT`
+  - `PORTFOLIO_STOP_LOSS_PERCENT`
+  - `PORTFOLIO_CACHE_TTL_MINUTES`
+
+**Validation status:**
+- xUnit tests: passing ✅
+- C# diagnostics on new portfolio/cache services and stores: no errors ✅
+- Note: terminal tool entered a hung/garbled shell state during this phase, so runtime command echo was unreliable; service/files were validated via diagnostics and tests.
+
+### User (Contract enforcement request)
+
+> Ensure the following contracts are enforced to spec for `Candle`, `Signal`, `Trade`, `PortfolioState`, `Strategy`, `Engine`, and `SimulationResult`, and in the process and readme files, list the relevant files for each of these contracts given the following contracts...
+
+### Assistant (Contract enforcement response)
+
+- Added explicit API contracts for `Signal`, `Trade`, `PortfolioState`, and `SimulationResult`
+- Added `IStrategy` and `IEngine` abstractions for the simulation pipeline
+- Updated `SmaCrossoverStrategy` to emit contract-friendly reason tokens such as `sma_cross_up`, `sma_cross_down`, and `hold`
+- Added `ContractMapper` so richer domain models can remain internal while API responses stay aligned to the requested shape
+- Updated portfolio endpoints in `Program.cs` to return spec-shaped DTOs and added `GET /api/portfolio/simulation-result`
+- Added tests for signal metadata propagation and stop-loss trade reason mapping
+- Updated `README.md` and `PROCESS.md` with a contract-to-file mapping section
+
+### Scope of changes
+
+- Fixed frontend build/config regressions and verified API/UI contract consistency.
+- Reworked market-session logic to be ET-aware with holiday/weekend handling.
+- Iterated chart behavior for timeframe semantics, viewport framing, and overlays.
+- Added focused tests for backend indicator contracts and frontend chart viewport utilities.
+
+### Key changes completed
+
+1. **TypeScript + UI config**
+  - Repaired malformed `tradebot-ui/tsconfig.app.json` and restored valid compiler options.
+
+2. **API/client and routing alignment**
+  - Re-validated frontend request/response shapes in `tradebot-ui/src/api.ts` and `tradebot-ui/src/types.ts` against backend contracts.
+  - Kept strict response guards for non-JSON/HTML fallback handling.
+  - Updated `tradebot-ui/Caddyfile` so `/api/*` routing is evaluated before SPA fallback.
+
+3. **Trading workflow and session status**
+  - Added/iterated `tradebot-ui/src/utils/tradingHours.ts` for ET + holiday-aware market status (`pre-market`, `open`, `after-hours`, `holiday`, `weekend`).
+  - Added `tradebot-ui/src/utils/orderSimulator.ts` for pending/fill simulation behavior outside regular hours.
+  - Refined `tradebot-ui/src/App.tsx` for simplified controls and clearer status/refresh behavior.
+
+4. **Indicator + timeframe data contract expansion**
+  - Extended backend DTOs in `src/TradeBot.App/Application/Contracts/Api/IndicatorResponseDto.cs` with selected period key and timeframe candle payload.
+  - Extended `src/TradeBot.App/Infrastructure/Core/indicator_bridge.py` to return timeframe-specific candle data and support additional period keys.
+
+5. **Chart behavior stabilization**
+  - Iterated `tradebot-ui/src/components/TradingChart.tsx` to:
+    - restore chart mode controls,
+    - enforce bounded timeframe windows,
+    - render resistance as high/low zone shading,
+    - reduce sparse-data compression via logical-range viewport framing.
+  - Extracted viewport logic into `tradebot-ui/src/utils/chartViewport.ts`.
+
+6. **Tests added**
+  - Backend: `tests/TradeBot.App.Tests/IndicatorApiContractTests.cs`.
+  - Frontend: `tradebot-ui/src/utils/chartViewport.test.ts`.
+
+### Current status
+
+- Core feature requests for this iteration are implemented (contract alignment, ET session logic, chart controls/overlays, and test scaffolding to avoid regressionary issues).
+- Remaining validation focus is chart UX under sparse/large datasets and refresh cadence.
+
+### Note on execution tooling
+
+- During several runs, terminal output capture behaved inconsistently (“hung”/stalled appearance), so validation was done with targeted diagnostics/tests where possible.
