@@ -57,6 +57,53 @@ export type TradeExecutionRequest = {
   strategy?: string;
 };
 
+export type SignalDto = {
+  action: string;
+  reason: string;
+  strategy_name: string;
+  rsi: number | null;
+  mac: number | null;
+};
+
+export type IndicatorPeriodMetricsDto = {
+  periodKey: string;
+  rsi: number;
+  avgLowRSI: number;
+  avgHighRSI: number;
+  averageGain: number;
+  averageLoss: number;
+  relativeStrength: number;
+  shortMovingAverage: number;
+  longMovingAverage: number;
+  crossover: number;
+  trendDirection: string;
+  volumeTraded: number;
+  dataPoints: number;
+};
+
+export type IndicatorResponseDto = {
+  ticker: string;
+  rsi: number;
+  avgLowRSI: number;
+  avgHighRSI: number;
+  period: number;
+  periodType: string;
+  selectedPeriodKey: string;
+  crossover: number;
+  trendDirection: string;
+  periodMetrics: IndicatorPeriodMetricsDto[];
+  candles: CandleDto[];
+};
+
+export type ChartTimeframe = '5m' | '15m' | '1h' | '1d' | '1w' | '1mo' | '1y' | 'all';
+
+export type SimulationResultDto = {
+  trades: TradeDto[];
+  final_portfolio: PortfolioStateDto;
+  realized_pnl: number;
+  unrealized_pnl: number;
+};
+
 export type ChartMode =
   | 'line'
   | 'candle'

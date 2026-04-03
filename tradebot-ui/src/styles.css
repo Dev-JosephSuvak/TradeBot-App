@@ -138,6 +138,22 @@ button:disabled {
   gap: 1rem;
 }
 
+.top-split-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.top-split-history {
+  flex: 1;
+}
+
+.top-split-execute {
+  border-top: 1px solid #2f4368;
+  padding-top: 0.85rem;
+}
+
 .table-wrap {
   max-height: 360px;
   overflow: auto;

@@ -4,6 +4,7 @@ import json
 import math
 import random
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 try:
     import pandas as pd
@@ -30,8 +31,9 @@ PERIOD_SPECS = {
     "5m": {"period": "5d", "interval": "5m", "points": 240},
     "15m": {"period": "30d", "interval": "15m", "points": 240},
     "1h": {"period": "730d", "interval": "1h", "points": 400},
-    "1d": {"period": "1y", "interval": "1d", "points": 365},
-    "1mo": {"period": "5y", "interval": "1mo", "points": 120},
+    "1d": {"period": "5d", "interval": "15m", "points": 400},
+    "1w": {"period": "1mo", "interval": "1d", "points": 31},
+    "1mo": {"period": "3mo", "interval": "1d", "points": 92},
     "1y": {"period": "1y", "interval": "1d", "points": 365},
     "5y": {"period": "5y", "interval": "1d", "points": 1825},
     "max": {"period": "max", "interval": "1d", "points": 3000},
@@ -69,7 +71,42 @@ def normalize_symbol(symbol: str) -> str:
     return symbol.replace("/", "-").upper().strip()
 
 
-def fetch_series(symbol: str, period_key: str) -> tuple[list[float], list[float]]:
+def normalize_timestamp(value) -> str:
+    if hasattr(value, "to_pydatetime"):
+        value = value.to_pydatetime()
+
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        else:
+            value = value.astimezone(timezone.utc)
+        return value.isoformat().replace("+00:00", "Z")
+
+    return str(value)
+
+
+def get_interval_timedelta(period_key: str) -> timedelta:
+    if period_key == "5m":
+        return timedelta(minutes=5)
+    if period_key == "15m":
+        return timedelta(minutes=15)
+    if period_key == "1h":
+        return timedelta(hours=1)
+    if period_key == "1w":
+        return timedelta(weeks=1)
+    if period_key == "1mo":
+        return timedelta(days=30)
+    return timedelta(days=1)
+
+
+def extract_column(df, name: str):
+    column = df[name]
+    if pd is not None and isinstance(column, pd.DataFrame):
+        return column.iloc[:, 0]
+    return column
+
+
+def fetch_series(symbol: str, period_key: str) -> tuple[list[dict], list[float], list[float]]:
     spec = PERIOD_SPECS[period_key]
 
     if yf is not None and pd is not None:
@@ -83,17 +120,46 @@ def fetch_series(symbol: str, period_key: str) -> tuple[list[float], list[float]
                 threads=False,
             )
             if isinstance(df, pd.DataFrame) and not df.empty and "Close" in df.columns and "Volume" in df.columns:
-                close = [float(v) for v in df["Close"].dropna().tolist()]
-                volume = [float(v) for v in df["Volume"].fillna(0).tolist()]
-                if len(close) == len(volume) and len(close) > 0:
-                    return close, volume
+                open_values = extract_column(df, "Open").tolist() if "Open" in df.columns else []
+                high_values = extract_column(df, "High").tolist() if "High" in df.columns else []
+                low_values = extract_column(df, "Low").tolist() if "Low" in df.columns else []
+                close_values = extract_column(df, "Close").tolist()
+                volume_values = extract_column(df, "Volume").fillna(0).tolist()
+
+                candles: list[dict] = []
+                closes: list[float] = []
+                volumes: list[float] = []
+
+                for index, raw_close in enumerate(close_values):
+                    if pd.isna(raw_close):
+                        continue
+
+                    raw_open = open_values[index] if index < len(open_values) else raw_close
+                    raw_high = high_values[index] if index < len(high_values) else raw_close
+                    raw_low = low_values[index] if index < len(low_values) else raw_close
+                    raw_volume = volume_values[index] if index < len(volume_values) else 0
+
+                    candle = {
+                        "timestamp": normalize_timestamp(df.index[index]),
+                        "open": float(raw_open if not pd.isna(raw_open) else raw_close),
+                        "high": float(raw_high if not pd.isna(raw_high) else raw_close),
+                        "low": float(raw_low if not pd.isna(raw_low) else raw_close),
+                        "close": float(raw_close),
+                        "volume": float(0 if pd.isna(raw_volume) else raw_volume),
+                    }
+                    candles.append(candle)
+                    closes.append(candle["close"])
+                    volumes.append(candle["volume"])
+
+                if len(candles) > 0:
+                    return candles, closes, volumes
         except Exception:
             pass
 
     return generate_synthetic_series(period_key, symbol)
 
 
-def generate_synthetic_series(period_key: str, symbol: str) -> tuple[list[float], list[float]]:
+def generate_synthetic_series(period_key: str, symbol: str) -> tuple[list[dict], list[float], list[float]]:
     count = PERIOD_SPECS[period_key]["points"]
     seed = abs(hash(f"{symbol}:{period_key}")) % (2**32)
     rng = random.Random(seed)
@@ -102,15 +168,36 @@ def generate_synthetic_series(period_key: str, symbol: str) -> tuple[list[float]
     volatility = 0.012
     price = 100.0 + (seed % 100)
 
+    interval = get_interval_timedelta(period_key)
+    start_time = datetime.now(timezone.utc) - (interval * count)
+
+    candles: list[dict] = []
     closes: list[float] = []
     volumes: list[float] = []
-    for _ in range(count):
+    for index in range(count):
+        open_price = price
         change = rng.gauss(drift, volatility)
         price = max(1.0, price * math.exp(change))
-        closes.append(price)
-        volumes.append(900_000 + rng.random() * 4_100_000)
+        close_price = price
+        spread = max(0.1, close_price * 0.01 * rng.random())
+        high_price = max(open_price, close_price) + spread
+        low_price = min(open_price, close_price) - spread
+        volume = 900_000 + rng.random() * 4_100_000
 
-    return closes, volumes
+        candles.append(
+            {
+                "timestamp": (start_time + interval * index).isoformat().replace("+00:00", "Z"),
+                "open": round(open_price, 4),
+                "high": round(high_price, 4),
+                "low": round(max(0.1, low_price), 4),
+                "close": round(close_price, 4),
+                "volume": round(volume, 2),
+            }
+        )
+        closes.append(price)
+        volumes.append(volume)
+
+    return candles, closes, volumes
 
 
 def simple_moving_average(values: list[float], window: int) -> float:
@@ -218,12 +305,16 @@ def period_key_from_request(period: int, period_type: str) -> str:
         return "5m" if period <= 5 else "15m"
     if unit.startswith("hour"):
         return "1h"
+    if unit.startswith("week"):
+        return "1w"
     if unit.startswith("day"):
         return "1d"
     if unit.startswith("month"):
         return "1mo"
     if unit.startswith("year"):
         return "5y" if period >= 5 else "1y"
+    if unit.startswith("all"):
+        return "max"
     return "max"
 
 
@@ -232,7 +323,7 @@ def pick_selected(metrics: list[MetricResult], requested_key: str) -> MetricResu
         if metric.period_key == requested_key:
             return metric
 
-    for fallback in ["1d", "1h", "15m", "5m", "1mo", "1y", "5y", "max"]:
+    for fallback in ["1d", "1h", "15m", "5m", "1w", "1mo", "1y", "5y", "max"]:
         for metric in metrics:
             if metric.period_key == fallback:
                 return metric
@@ -243,19 +334,32 @@ def pick_selected(metrics: list[MetricResult], requested_key: str) -> MetricResu
 def main() -> None:
     args = parse_args()
     ticker = normalize_symbol(args.ticker)
+    requested_key = period_key_from_request(args.period, args.period_type)
 
     metrics: list[MetricResult] = []
-    for key in ["5m", "15m", "1h", "1d", "1mo", "1y", "5y", "max"]:
-        closes, volumes = fetch_series(ticker, key)
+    datasets: dict[str, tuple[list[dict], list[float], list[float]]] = {}
+
+    keys_to_fetch: list[str] = [requested_key]
+    for fallback in ["1d", "1h", "15m", "5m", "1w", "1mo", "1y", "5y", "max"]:
+        if fallback not in keys_to_fetch:
+            keys_to_fetch.append(fallback)
+
+    for key in keys_to_fetch:
+        candles, closes, volumes = fetch_series(ticker, key)
         if not closes:
             continue
+        datasets[key] = (candles, closes, volumes)
         metrics.append(compute_period_metrics(closes, volumes, key, args.period, args.short_window, args.long_window))
+
+        if key == requested_key:
+            break
 
     if not metrics:
         print(json.dumps({"error": "No indicator data available."}))
         return
 
-    selected = pick_selected(metrics, period_key_from_request(args.period, args.period_type))
+    selected = pick_selected(metrics, requested_key)
+    selected_candles = datasets.get(selected.period_key, ([], [], []))[0]
     output = {
         "ticker": ticker,
         "rsi": selected.rsi,
@@ -263,6 +367,7 @@ def main() -> None:
         "avgHighRSI": selected.avg_high_rsi,
         "period": args.period,
         "periodType": args.period_type,
+        "selectedPeriodKey": selected.period_key,
         "crossover": selected.crossover,
         "trendDirection": selected.trend_direction,
         "periodMetrics": [
@@ -283,6 +388,7 @@ def main() -> None:
             }
             for metric in metrics
         ],
+        "candles": selected_candles,
     }
 
     print(json.dumps(output))

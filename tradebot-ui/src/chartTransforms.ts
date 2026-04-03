@@ -11,7 +11,7 @@ export type CandlePoint = {
 };
 export type HistogramPoint = { time: UTCTimestamp; value: number; color?: string };
 
-function toUtcTimestamp(iso: string): UTCTimestamp {
+export function toUtcTimestamp(iso: string): UTCTimestamp {
   return Math.floor(new Date(iso).getTime() / 1000) as UTCTimestamp;
 }
 

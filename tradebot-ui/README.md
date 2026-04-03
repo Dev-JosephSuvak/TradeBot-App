@@ -18,6 +18,14 @@ React dashboard for the `.NET` TradeBot API.
 
 ## Run
 
+Run the full stack from the repository root:
+
+```zsh
+docker compose up --build
+```
+
+Or run backend/frontend separately.
+
 Start backend API first:
 
 ```zsh

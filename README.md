@@ -44,6 +44,8 @@ Every provider feeds a shared strategy pipeline, and every result is converted i
 - `src/TradeBot.App/appsettings.json` — local configuration
 - `tests/TradeBot.App.Tests/` — strategy and safety tests
 - `tradebot-ui/` — React dashboard for charts, portfolio management, and executed trades
+- `compose.yaml` — master run pipeline for API + UI containers
+- `.dockerignore` — shared Docker build exclusions
 - `PROCESS.md` — architecture notes and conversation log
 
 ## Contract file map
@@ -150,6 +152,33 @@ npm run dev
 
 The UI runs on `http://localhost:5173` and proxies `/api/*` requests to `http://localhost:5100`.
 
+## Master run process
+
+Run the full environment with Docker Compose:
+
+```zsh
+docker compose up --build
+```
+
+Endpoints when compose is running:
+
+- UI: `http://localhost:5173`
+- API: `http://localhost:5100`
+- Swagger: `http://localhost:5100`
+
+Stop the stack:
+
+```zsh
+docker compose down
+```
+
+Container files:
+
+- `compose.yaml`
+- `src/TradeBot.App/Dockerfile`
+- `tradebot-ui/Dockerfile`
+- `tradebot-ui/Caddyfile`
+
 ## UI features
 
 - Chart modes: `Line`, `Candle`, `Range Line`, `Range Bar`, `Heikin Ashi`, `Kagi`
@@ -225,4 +254,9 @@ curl "http://localhost:5100/api/indicators/AAPL?period=15&periodType=days&shortW
 
 - `Binance` is integrated, but public access can still be region-restricted and may return HTTP `451` depending on your location.
 - `Twelve Data` and `Polygon.io` integrations are implemented but disabled by default until API keys are provided.
-- Yahoo Finance and indicator analytics are accessed through Python bridges to satisfy the cross-runtime requirement.
+
+- Yahoo Finance and indicator analytics are accessed through Python bridges to satisfy the cross-runtime requirement, but utilize the inherent security and structure provided by a .NET environment.
+
+- The API container installs `python3`, `yfinance`, `pandas`, and `numpy`; `TA-Lib` remains optional and the indicator bridge already falls back when it is unavailable.
+
+-Further work required to upload this to Firebase. It prefers a Firebase connection first and falls back to the JSON requirement as specified in the notes with absence of the environmental variable being set. 

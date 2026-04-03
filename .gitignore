@@ -7,3 +7,5 @@ output/
 .vscode/
 bin/
 obj/
+node_modules/
+package-lock.json

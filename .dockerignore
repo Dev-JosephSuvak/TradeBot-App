@@ -1,0 +1,9 @@
+.git
+.gitignore
+.vscode
+.venv
+**/bin
+**/obj
+**/node_modules
+tradebot-ui/dist
+tests/TestResults

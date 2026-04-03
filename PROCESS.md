@@ -32,7 +32,9 @@
 19. Swagger is configured with typed endpoint responses so each contract DTO appears in the API schema.
 20. `tradebot-ui` provides a React dashboard with chart-mode switching, portfolio management, and executed-trade views.
 21. Backend CORS allows `http://localhost:5173` so the UI can call API endpoints during local development.
-22. The console runner is opt-in via `RUN_CONSOLE=true`; the API host is always the primary entry-point.
+22. `compose.yaml` acts as the master run pipeline, building and starting both the API and UI together.
+23. The UI container serves the built React app and proxies `/api/*` traffic to the API container over the compose network.
+24. The console runner is opt-in via `RUN_CONSOLE=true`; the API host is always the primary entry-point.
 
 ### Components
 
@@ -91,6 +93,15 @@
   - React + TypeScript + Vite frontend for charting and portfolio management
   - Uses `lightweight-charts` for line/candle/range/heikin-ashi/kagi rendering modes
   - Calls `/api/candles`, `/api/market-universe/tickers`, `/api/portfolio`, and `/api/portfolio/execute`
+- `compose.yaml`
+  - Orchestrates `api` and `ui` services together
+  - Exposes API on `5100` and UI on `5173`
+- `src/TradeBot.App/Dockerfile`
+  - Builds the .NET API and includes a Python runtime for bridge scripts
+- `tradebot-ui/Dockerfile`
+  - Builds the React UI and serves static assets from a web container
+- `tradebot-ui/Caddyfile`
+  - Proxies `/api/*` to the API container and falls back to `index.html` for SPA routes
 - `indicator_bridge.py`
   - Uses `pandas`/`TA-Lib` when available, with resilient fallback behavior
   - Computes RSI with Wilder smoothing, average low/high RSI, RS, MA crossover, trend, and period volume
@@ -232,6 +243,10 @@
 - Added `tradebot-ui` React app with chart workspace, market ticker selector, portfolio summary, trade execution form, and executed-trade grid
 - Added chart transforms for `line`, `candle`, `range-line`, `range-bar`, `heikin-ashi`, and `kagi` views
 - Added backend CORS policy (`TradeBotUi`) for `http://localhost:5173`
+- Added `src/TradeBot.App/Dockerfile` for a containerized API with Python bridge support
+- Added `tradebot-ui/Dockerfile` and `tradebot-ui/Caddyfile` for a containerized UI with API reverse proxying
+- Added root `compose.yaml` as the master run process for launching API + UI together
+- Added Docker ignore files for leaner builds
 
 ## Validation log
 
@@ -248,6 +263,8 @@
 
 - C# diagnostics for `src/TradeBot.App` and `tests/TradeBot.App.Tests/UnitTest1.cs` ✅
 - Python analysis still reports optional-package imports unresolved until `requirements.txt` is installed (`pandas`, `numpy`, `yfinance`, optional `TA-Lib`)
+- Container config diagnostics for `compose.yaml`, `src/TradeBot.App/Dockerfile`, and `tradebot-ui/Caddyfile` ✅
+- UI container base-image scanners still report upstream vulnerability advisories; the compose and config files themselves are valid
 
 ### Sample run
 
@@ -544,13 +561,13 @@ Requirement:
   - `PORTFOLIO_CACHE_TTL_MINUTES`
 
 **Validation status:**
-- xUnit tests: `2/2` passing ✅
+- xUnit tests: passing ✅
 - C# diagnostics on new portfolio/cache services and stores: no errors ✅
 - Note: terminal tool entered a hung/garbled shell state during this phase, so runtime command echo was unreliable; service/files were validated via diagnostics and tests.
 
 ### User (Contract enforcement request)
 
-> Ensure the following contracts are enforced to spec for `Candle`, `Signal`, `Trade`, `PortfolioState`, `Strategy`, `Engine`, and `SimulationResult`, and in the process and readme files, list the relevant files for each of these contracts.
+> Ensure the following contracts are enforced to spec for `Candle`, `Signal`, `Trade`, `PortfolioState`, `Strategy`, `Engine`, and `SimulationResult`, and in the process and readme files, list the relevant files for each of these contracts given the following contracts...
 
 ### Assistant (Contract enforcement response)
 
@@ -561,3 +578,50 @@ Requirement:
 - Updated portfolio endpoints in `Program.cs` to return spec-shaped DTOs and added `GET /api/portfolio/simulation-result`
 - Added tests for signal metadata propagation and stop-loss trade reason mapping
 - Updated `README.md` and `PROCESS.md` with a contract-to-file mapping section
+
+### Scope of changes
+
+- Fixed frontend build/config regressions and verified API/UI contract consistency.
+- Reworked market-session logic to be ET-aware with holiday/weekend handling.
+- Iterated chart behavior for timeframe semantics, viewport framing, and overlays.
+- Added focused tests for backend indicator contracts and frontend chart viewport utilities.
+
+### Key changes completed
+
+1. **TypeScript + UI config**
+  - Repaired malformed `tradebot-ui/tsconfig.app.json` and restored valid compiler options.
+
+2. **API/client and routing alignment**
+  - Re-validated frontend request/response shapes in `tradebot-ui/src/api.ts` and `tradebot-ui/src/types.ts` against backend contracts.
+  - Kept strict response guards for non-JSON/HTML fallback handling.
+  - Updated `tradebot-ui/Caddyfile` so `/api/*` routing is evaluated before SPA fallback.
+
+3. **Trading workflow and session status**
+  - Added/iterated `tradebot-ui/src/utils/tradingHours.ts` for ET + holiday-aware market status (`pre-market`, `open`, `after-hours`, `holiday`, `weekend`).
+  - Added `tradebot-ui/src/utils/orderSimulator.ts` for pending/fill simulation behavior outside regular hours.
+  - Refined `tradebot-ui/src/App.tsx` for simplified controls and clearer status/refresh behavior.
+
+4. **Indicator + timeframe data contract expansion**
+  - Extended backend DTOs in `src/TradeBot.App/Application/Contracts/Api/IndicatorResponseDto.cs` with selected period key and timeframe candle payload.
+  - Extended `src/TradeBot.App/Infrastructure/Core/indicator_bridge.py` to return timeframe-specific candle data and support additional period keys.
+
+5. **Chart behavior stabilization**
+  - Iterated `tradebot-ui/src/components/TradingChart.tsx` to:
+    - restore chart mode controls,
+    - enforce bounded timeframe windows,
+    - render resistance as high/low zone shading,
+    - reduce sparse-data compression via logical-range viewport framing.
+  - Extracted viewport logic into `tradebot-ui/src/utils/chartViewport.ts`.
+
+6. **Tests added**
+  - Backend: `tests/TradeBot.App.Tests/IndicatorApiContractTests.cs`.
+  - Frontend: `tradebot-ui/src/utils/chartViewport.test.ts`.
+
+### Current status
+
+- Core feature requests for this iteration are implemented (contract alignment, ET session logic, chart controls/overlays, and test scaffolding to avoid regressionary issues).
+- Remaining validation focus is chart UX under sparse/large datasets and refresh cadence.
+
+### Note on execution tooling
+
+- During several runs, terminal output capture behaved inconsistently (“hung”/stalled appearance), so validation was done with targeted diagnostics/tests where possible.
