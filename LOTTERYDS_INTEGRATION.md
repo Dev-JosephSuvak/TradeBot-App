@@ -42,6 +42,5 @@ spread, slippage and account buying power before using it for strategies.
 ## Status
 
 Code is committed but tests and end-to-end operation have not yet been run.
-The bridge is not yet exposed by the .NET API, wired into React, or connected
-to IBKR. No live or paper brokerage orders are enabled. All brokerage
+The predictor is exposed as a read-only .NET endpoint:\n\n`GET /api/price-bounds/AAPL?lookback=100&horizon=5&coverage=0.9`\n\nThe market-data service can fall back to simulated candles, so do not treat\nits output as verified live-market data. The endpoint is not yet wired into\nReact or connected to IBKR. No live or paper brokerage orders are enabled. All brokerage
 integrations must default to paper-only with account verification and a kill switch.
