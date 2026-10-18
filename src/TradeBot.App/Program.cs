@@ -49,6 +49,7 @@ builder.Services.AddSingleton<IPortfolioStore>(portfolioStore);
 builder.Services.AddSingleton<IStrategy, SmaCrossoverStrategy>();
 builder.Services.AddSingleton<IEngine, SimulationEngine>();
 builder.Services.AddSingleton<MarketIndexService>();
+builder.Services.AddSingleton<PriceBoundsService>();
 builder.Services.AddSingleton<MarketUniverseService>();
 builder.Services.AddSingleton<TickerAggregateCacheService>();
 builder.Services.AddSingleton<PaperPortfolioService>();
@@ -105,6 +106,38 @@ app.MapGet("/api/candles/{ticker}", async (
     "Tries live providers in order; falls back to simulated data if none are available.")
 .Produces<IReadOnlyList<CandleDto>>(200)
 .Produces(400);
+
+// Research-only prediction: never submits brokerage orders.
+app.MapGet("/api/price-bounds/{ticker}", async (
+    string ticker,
+    [FromQuery] int? lookback,
+    [FromQuery] int? horizon,
+    [FromQuery] double? coverage,
+    PriceBoundsService priceBounds,
+    CancellationToken ct) =>
+{
+    try
+    {
+        var result = await priceBounds.PredictAsync(
+            ticker, lookback ?? 100, horizon ?? 5, coverage ?? 0.90, ct);
+        return Results.Ok(result);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+    {
+        return Results.StatusCode(499);
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "Price-bounds prediction failed for {Ticker}", ticker);
+        return Results.Problem("Price-bounds prediction unavailable.", statusCode: 503);
+    }
+})
+.WithName("GetPriceBounds")
+.WithSummary("Research-only statistical price bounds; no trade execution");
 
 app.MapGet("/api/signals/{ticker}", async (
     string ticker,
