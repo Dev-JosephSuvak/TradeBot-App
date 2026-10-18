@@ -3,7 +3,7 @@
 
 Input stdin JSON: {"candles":[{"timestamp":"...","open":...,"high":...,
 "low":...,"close":...}], "horizon":5, "lookback":100, "coverage":0.9}
-Set LOTTERYDS_ROOT to the local LotteryDS checkout directory.
+The predictor is bundled in TradeBot-App/python/prediction.
 """
 import importlib.util
 import json
@@ -13,12 +13,9 @@ import sys
 
 
 def main():
-    root = os.environ.get("LOTTERYDS_ROOT")
-    if not root:
-        raise RuntimeError("LOTTERYDS_ROOT must point to a local LotteryDS checkout")
-    module_path = Path(root) / "Python Service" / "Predictions" / "Pattern" / "price_bounds.py"
+    module_path = Path(__file__).resolve().parents[4] / "python" / "prediction" / "price_bounds.py"
     if not module_path.is_file():
-        raise FileNotFoundError(f"LotteryDS predictor not found: {module_path}")
+        raise FileNotFoundError(f"Bundled predictor not found: {module_path}")
     spec = importlib.util.spec_from_file_location("lotteryds_price_bounds", module_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
